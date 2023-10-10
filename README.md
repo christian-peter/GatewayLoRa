@@ -1,1 +1,3 @@
 # GatewayLoRa
+Project ongoing...
+For any questions or suggestions, put it in comment.
