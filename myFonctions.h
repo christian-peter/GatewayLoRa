@@ -1,15 +1,117 @@
 #ifndef MY_COMMANDS_H
 #define MY_COMMANDS_H
 
+#include <HTTPClient.h>
+#include <Ethernet.h>
 #include <Arduino.h>
 #include <WiFi.h>
 
-void sendCommand(String myCommand, long baudSerial, long baudSerial2);
-void sendCommand(String myCommand);
-void readByteSerial2();
+void sendRequestByWiFi(const char* ssid, const char* password, const String urlServer);  // GET by WiFi
+void sendCommand(String myCommand, long baudSerial, long baudSerial2);                   // send AT command_1
+void myWiFiConnexion(const char* ssid, const char* password);                            // Connexion WiFi
+void byWiFi_HTTP(const String urlServer);                                                // Init HTT by WiFi
+void sendRequestByGSM(const char* url);                                                  // GET by GSM
+void sendCommand(String myCommand);                                                      // send AT command_1
+void readByteSerial2();                                                                  //Read all byte
+void initHttpGMS();                                                                      // Init GSM --> APN
+void closeGSM();                                                                         // Close GSM
+void getMAC();                                                                           // Get MAC
 
-//---------------------------------------------------------------------------//
-//<<--- FONCTINO POUR ENVOYER UNE COMMANDE --->>
+//--------------------------------------D  E  B  U  T  -- G  S  M -------------------------------------//
+//1. Fontion d'initialisation de la communication GSM --> APN SFR France "sl2sfr"
+void initHttpGMS() {
+  sendCommand("AT+SAPBR=3,1,\"Contype\", \"GPRS\"");
+  sendCommand("AT+SAPBR=3,1,\"APN\",\"sl2sfr\"");  //Configure bearer profile APN: SFR France
+  sendCommand("AT+SAPBR=1,1");                     //Open
+  sendCommand("AT+SAPBR=2,1");                     //Get the IP
+}
+
+//1. Fontion principale d'envoie de la requete HTTP --> GET via GSM
+void sendRequestByGSM(const char* url) {
+  initHttpGMS();                         //Initialisation
+  delay(3000);                           //Attendre fin de l'initialisation
+  sendCommand("AT+HTTPINIT");            // Initialisation
+  sendCommand("AT+HTTPPARA=\"CID\",1");  // Set parameters for HTTP session
+  String urlCommand = "AT+HTTPPARA=\"URL\",\"";
+  urlCommand += url;
+  urlCommand += "\"";
+  sendCommand(urlCommand.c_str());  // GET Data
+  delay(1000);
+  sendCommand("AT+HTTPACTION=0");   // GET session start / GET successfully
+  delay(1000);
+  sendCommand("AT+HTTPREAD");  // Read the data of HTTP server
+  delay(10000);
+}
+
+//-- FONCTION CLOSE GSM COMM
+void closeGSM() {
+  sendCommand("AT+HTTPTERM");
+}
+//-------------------------------------- F I N  -- G  S  M -------------------------------------//
+
+//-----------------------------------D  E  B  U  T  -- W i  F  i -------------------------------//
+//1. Fontion principale : etablissement de la connexion WiFi et envoie de la requete HTTP --> GET
+void sendRequestByWiFi(const char* ssid, const char* password, const String urlServer) {
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.println("\nConnecting");
+
+  while (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Connexion au réseau en cours...");
+    int attempts = 0;
+    attempts++;
+    if (attempts > 10) {
+      Serial.println("Échec de la connexion au réseau Wi-Fi.");
+      while (1) {
+      }
+    }
+  }
+
+  Serial.println("-------------------------------");
+  Serial.println("Connecté au réseau Wi-Fi");
+  Serial.print("Local ESP32 IP: ");
+  Serial.println(WiFi.localIP());
+  Serial.print("Force du signal (RSSI) : ");
+  Serial.print(WiFi.RSSI());
+  Serial.println(" dBm");
+  Serial.println("-------------------------------");
+  byWiFi_HTTP(urlServer);  //Envoi de la requete HTTP VIA LE WIFI
+}
+
+//2. Fontion d'envoie de la requete HTTP --> GET via WiFi
+
+void byWiFi_HTTP(const String urlServer) {
+  unsigned long lastTime = 0;
+  lastTime = millis();
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+
+    String serverPath = urlServer;
+    http.begin(serverPath.c_str());
+
+    int httpResponseCode = http.GET();
+    Serial.print(httpResponseCode);
+    Serial.print("httpResponseCode -> OK");
+
+    if (httpResponseCode > 0) {
+      Serial.print("HTTP Response code : ");
+      Serial.print(httpResponseCode);
+      String payload = http.getString();
+      Serial.println(payload);
+    } else {
+      Serial.print("Error code: ");
+      Serial.print(httpResponseCode);
+    }
+    http.end();
+  } else {
+    Serial.println("WiFi Disconnected");
+  }
+  lastTime = millis();
+}
+//----------------------------------- F  I  N  -- W i  F  i -------------------------------//
+
+//
 void sendCommand(String myCommand, long baudSerial, long baudSerial2) {
   int TX = 16;
   int RX = 17;
@@ -18,7 +120,7 @@ void sendCommand(String myCommand, long baudSerial, long baudSerial2) {
 
   Serial.println("Starting...");
   Serial2.println(myCommand);
-  delay(1000);
+  delay(500);
 }
 
 void sendCommand(String myCommand) {
@@ -68,32 +170,31 @@ void readMessage() {
 }
 //--------------------------------------------------------------------------//
 //<<----------------- FONCTION POUR LA CONNEXION WiFi -------------------->>//
-void myWiFi(const char* ssid, const char* password) {
+void myWiFiConnexion(const char* ssid, const char* password) {
 
-  Serial.begin(9600);
-
-  Serial.printf("Tentative de connexion à %s\n", ssid);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
+  Serial.println("\nConnecting");
 
-  int attempts = 0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
     Serial.println("Connexion au réseau en cours...");
+    int attempts = 0;
     attempts++;
     if (attempts > 10) {
       Serial.println("Échec de la connexion au réseau Wi-Fi.");
       while (1) {
-        // Boucle infinie
       }
     }
   }
 
+  Serial.println("--------------------------------");
   Serial.println("Connecté au réseau Wi-Fi");
-  Serial.print("Adresse IP: ");
+  Serial.print("Local ESP32 IP: ");
   Serial.println(WiFi.localIP());
   Serial.print("Force du signal (RSSI) : ");
   Serial.print(WiFi.RSSI());
   Serial.println(" dBm");
+  Serial.println("--------------------------------");
 }
 //--------------------------------------------------------------------------//
 //<<----------------- FONCTION POUR ETABLIR LA CONNEXION ------------------>>//
@@ -155,58 +256,17 @@ void testCIPSRIPCommand() {
   }
 }
 /*********************************************************************/
-// --- ETABLISSEMENT DE LA CONNEXION ---  //
 
-void startConnexion() {
-  int myAttente = 5000;
-/*
-  Serial.println("1. Step 1 : Data Services status ");
-  sendCommand("AT+CGATT?");
-  delay(myAttente); */
-/*
-  Serial.println("2. Step 2: Enable multi connection ");
-  sendCommand("AT+CIPMUX=1");
-  delay(myAttente); */
+void getMAC() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  uint8_t mac_gateway[6];
+  esp_efuse_mac_get_default(mac_gateway);
 
-
-  Serial.println("3. Step 3: Start task and set APN. ");
-  sendCommand("AT+CSTT=\"CMNET\"");
-  delay(myAttente); /*
-
-  Serial.println("4. Step 4: Bring up wireless connection ");
-  sendCommand("AT+CIICR");
-  delay(myAttente);
-
-  Serial.println("5. Step 5: Get local IP address ");
-  sendCommand("AT+CIFSR");
-  delay(myAttente);
-
-/*
-  Serial.println("6. Step 6: Establish a TCP connection, connection number 0 ");
-  sendCommand("AT+CIPSTART=0,\"TCP\",\"45.77.46.150\",\"8500\"");  //Update port ID
-  delay(myAttente); */
-/*
-  Serial.println("7. Step 7: Establish a UDP connection, connection number 1");
-  sendCommand("AT+CIPSTART=1,\"UDP\",\"45.77.46.150\",\"9991\"");
-  delay(myAttente); */
-
-/*
-  Serial.println("8. Step 8: Send data to connection 0");
-  sendCommand("AT+CIPSTART=0");
-  delay(myAttente/2);
-  sendCommand("TCP test");
-  delay(myAttente); */
-/*
-  Serial.println("9. Step 9: Send data to connection 1");
-  sendCommand("AT+CIPSTART=1");
-  delay(myAttente/2);
-  sendCommand("UDP test");
-  delay(myAttente);
-
-  Serial.println("10. Step 10: Status");
-  sendCommand("AT+CIPSTATUS"); */
+  // Affiche l'adresse MAC sur le port série
+  Serial.printf("%02X:%02X:%02X:%02X:%02X:%02X\n",
+                mac_gateway[0], mac_gateway[1], mac_gateway[2],
+                mac_gateway[3], mac_gateway[4], mac_gateway[5]);
 }
-
-
 
 #endif
